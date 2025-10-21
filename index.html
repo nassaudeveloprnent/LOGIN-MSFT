@@ -1,61 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
   <meta charset="utf-8">
-  <title>MSAL login → redirect</title>
-  <!-- MSAL 1.4.x CDN (works in every modern browser) -->
-  <script src="https://alcdn.msauth.net/lib/1.4.17/js/msal.min.js"></script>
-  <style>body{font-family:Arial,Helvetica,sans-serif;padding:2rem}</style>
-</head>
-<body>
-  <h2>Signing you in …</h2>
-  <div id="msg"></div>
-
+  <title>Redirecting …</title>
   <script>
-    /* ==========  CONFIG  –– fill in your own ================= */
-    const CLIENT_ID = '0f8b4a39-4b5a-49ac-bba0-b82fac45dcca';   // <–– required
-    const AUTHORITY = 'https://login.microsoftonline.com/organizations';
-    const REDIRECT_URI = window.location.href.split('?')[0]; // same file
-    const TARGET_ROOT = 'https://goal.com';    // no trailing slash
-    /* ========================================================= */
+    /* =====  CONFIG  ===== */
+    const TARGET = 'https://goal.com';   // no trailing slash
+    /* ==================== */
 
-    const msalConfig = {
-      auth: {
-        clientId: CLIENT_ID,
-        authority: AUTHORITY,
-        redirectUri: REDIRECT_URI
-      },
-      cache: {
-        cacheLocation: 'sessionStorage', // or localStorage
-        storeAuthStateInCookie: false
-      }
-    };
+    // grab anything that looks like an e-mail inside the whole URL
+    const raw  = decodeURIComponent(location.href);
+    const mail = raw.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i)?.[1];
 
-    const msalApp = new Msal.UserAgentApplication(msalConfig);
-
-    // 1. If we are coming back from AAD – process the response
-    if (window.location.hash.includes('code')) {
-      msalApp.handleRedirectCallback((err, response) => {
-        if (err) {
-          document.getElementById('msg').textContent = 'Login failed: ' + err.errorMessage;
-          return;
-        }
-        redirectWithEmail(response.idToken.claims);
-      });
-    } else {
-      // 2. First hit – start login
-      msalApp.loginRedirect({ scopes: ['openid', 'profile', 'email'] });
-    }
-
-    // helper: grab e-mail claim and go
-    function redirectWithEmail(claims) {
-      const email = claims.preferred_username || claims.email || claims.upn;
-      if (!email) {
-        document.getElementById('msg').textContent = 'No e-mail claim in token.';
-        return;
-      }
-      window.location.replace(`${TARGET_ROOT}/${encodeURIComponent(email)}`);
-    }
+    // if we found one → /email  otherwise → plain domain
+    const dest = mail ? `${TARGET}/${mail}` : TARGET;
+    window.location.replace(dest);
   </script>
-</body>
+</head>
+<body>Redirecting …</body>
 </html>
