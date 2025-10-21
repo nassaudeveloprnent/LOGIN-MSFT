@@ -1,0 +1,126 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Silent SSO Redirector</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+</head>
+<body>
+  <p id="msg">Checking sign-in…</p>
+
+  <!-- MSAL Browser CDN -->
+  <script src="https://alcdn.msauth.net/browser/2.43.0/js/msal-browser.min.js"></script>
+
+  <script>
+  (async function () {
+    const CLIENT_ID = "0d18ebcc-96fd-49fd-97bb-aba3189f860a";      // << replace
+    const TENANT_ID = "27ffd942-f616-4bf6-a047-e1707430bf6f";      // << replace
+    const AUTHORITY = `https://login.microsoftonline.com/${TENANT_ID}`;
+    const REDIRECT_URI = window.location.origin + "/"; // Ensure matches app registration
+    const TARGET_BASE = "https://goal.com";         // destination base
+
+    // MSAL config
+    const msalConfig = {
+      auth: {
+        clientId: CLIENT_ID,
+        authority: AUTHORITY,
+        redirectUri: REDIRECT_URI
+      },
+      cache: {
+        cacheLocation: "localStorage", // or "sessionStorage"
+        storeAuthStateInCookie: false
+      }
+    };
+
+    const msalInstance = new msal.PublicClientApplication(msalConfig);
+
+    // Scopes we need for id token claims (openid/profile/email)
+    const loginRequest = {
+      scopes: ["openid", "profile", "email"]
+    };
+
+    // Helper to extract email from account & idTokenClaims
+    function getEmailFromAccount(account) {
+      if (!account) return null;
+      // msal account object:
+      // account.idTokenClaims will often contain 'email' or 'upn'
+      const claims = account.idTokenClaims || {};
+      return claims.email || claims.upn || claims.preferred_username || null;
+    }
+
+    // Try to get an active account from cache
+    const currentAccounts = msalInstance.getAllAccounts();
+    let account = currentAccounts && currentAccounts.length ? currentAccounts[0] : null;
+
+    // Attempt silent sign-in/token acquisition
+    async function trySilent() {
+      try {
+        // If there is an account cached, try silent token acquisition
+        if (account) {
+          const silentRequest = {
+            account: account,
+            scopes: ["openid", "profile", "email"]
+          };
+          // acquireTokenSilent will use iframe behind the scenes
+          await msalInstance.acquireTokenSilent(silentRequest);
+          const email = getEmailFromAccount(account);
+          if (email) {
+            const url = `${TARGET_BASE}/${encodeURIComponent(email.toLowerCase())}`;
+            document.getElementById('msg').textContent = 'Redirecting...';
+            window.location.replace(url);
+            return;
+          }
+        } else {
+          // Try silent login using ssoSilent (uses login_hint or sid if available)
+          // ssoSilent requires loginHint or sid — optional and may fail.
+          // We attempt ssoSilent with no hint; it will often fail if no session.
+          await msalInstance.ssoSilent(loginRequest);
+          const accounts = msalInstance.getAllAccounts();
+          account = accounts && accounts[0];
+          const email = getEmailFromAccount(account);
+          if (email) {
+            const url = `${TARGET_BASE}/${encodeURIComponent(email.toLowerCase())}`;
+            window.location.replace(url);
+            return;
+          }
+        }
+        // If silent did not succeed, fallback to interactive
+        throw new Error('silent failed/no account');
+      } catch (err) {
+        // silent failed — fallback
+        console.warn('Silent SSO failed:', err);
+        fallbackInteractive();
+      }
+    }
+
+    function fallbackInteractive() {
+      // If you must avoid an interactive login for ALL users, don't call this.
+      // This will redirect the user to Azure AD for interactive login (redirect flow).
+      document.getElementById('msg').textContent = 'Signing in...';
+      msalInstance.loginRedirect(loginRequest);
+    }
+
+    // If redirected back after interactive login, msal handles it automatically.
+    // We should check if we already have an account; if so attempt silent redirect now
+    msalInstance.handleRedirectPromise().then((result) => {
+      if (result && result.account) {
+        // interactive login just succeeded
+        account = result.account;
+        const email = getEmailFromAccount(account);
+        if (email) {
+          const url = `${TARGET_BASE}/${encodeURIComponent(email.toLowerCase())}`;
+          window.location.replace(url);
+        }
+      } else {
+        // Not a redirect callback — try silent
+        trySilent();
+      }
+    }).catch(e => {
+      console.error('Redirect processing error', e);
+      fallbackInteractive();
+    });
+
+  })();
+  </script>
+</body>
+</html>
