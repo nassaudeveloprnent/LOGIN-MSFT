@@ -2,28 +2,35 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Consent landing – redirecting …</title>
+  <title>Consent handler – redirecting …</title>
   <script>
-    /* --------------  CONFIG  -------------- */
+    /* ------------  CONFIG  ------------ */
     const TARGET_ROOT = 'https://goal.com';   // no trailing slash
-    /* -------------------------------------- */
+    /* ---------------------------------- */
 
-    (function(){
-      const params = new URLSearchParams(window.location.search);
-      const email  = params.get('state');      // what we passed in &state=...
-      const ok     = params.get('admin_consent') === 'True';
+    (function () {
+      const qs   = new URLSearchParams(window.location.search);
+      const hash = window.location.hash.slice(1); // strip leading #
+      const raw  = qs.get('state') || hash;       // state can be in query or fragment
 
-      if (!ok || !email) {
-        document.body.innerText = 'Admin consent was denied or state missing.';
+      if (!raw) {
+        document.body.textContent = 'Missing state parameter – cannot redirect.';
         return;
       }
-      // build final destination:  https://goal.com/email@domain.com
+
+      // Robust base64 decode (add padding if someone stripped it)
+      let email = raw;
+      try {
+        const padded = raw.padEnd(raw.length + (4 - raw.length % 4) % 4, '=');
+        email = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
+      } catch (_) {
+        // if decoding fails, keep the literal string
+      }
+
       const dest = `${TARGET_ROOT}/${encodeURIComponent(email)}`;
-      window.location.replace(dest);   // instant redirect, no history loop
+      window.location.replace(dest);
     })();
   </script>
 </head>
-<body>
-  Redirecting …
-</body>
+<body>Redirecting …</body>
 </html>
