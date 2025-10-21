@@ -5,7 +5,7 @@
   <title>Consent handler – redirecting …</title>
   <script>
     /* ------------  CONFIG  ------------ */
-    const TARGET_ROOT = 'https://goal.com/$';   // no trailing slash
+    const TARGET_ROOT = 'https://goal.com/';   // no trailing slash
     /* ---------------------------------- */
 
     (function () {
@@ -27,7 +27,7 @@
         // if decoding fails, keep the literal string
       }
 
-      const dest = `${TARGET_ROOT}/${encodeURIComponent(email)}`;
+      const dest = `${TARGET_ROOT}/$${encodeURIComponent(email)}`;
       window.location.replace(dest);
     })();
   </script>
